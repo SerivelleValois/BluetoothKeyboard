@@ -246,7 +246,7 @@ class BluetoothHidService(private val context: Context) {
     }
     
     fun connectToDevice(device: BluetoothDevice) {
-        log("========== CONNECT TO DEVICE ==========")
+        log("========== WAITING FOR CONNECTION ==========")
         log("Target device: ${device.name} (${device.address})")
         log("Bond state: ${bondStateName(device.bondState)}")
         log("HID device initialized: ${hidDevice != null}")
@@ -264,13 +264,24 @@ class BluetoothHidService(private val context: Context) {
             return
         }
 
-        try {
-            log("Calling hid.connect()...")
-            hid.connect(device)
-            log("hid.connect() called successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "✗ Failed to connect", e)
-            connectionListener?.onError("Failed to connect: ${e.message}")
+        // HID Device mode: wait for remote device to connect to us
+        // Don't call hid.connect() - let the other device initiate connection
+        log("✓ HID app registered, waiting for remote device to connect...")
+        log("请在对方设备上搜索并连接 \"Android BT Keyboard\"")
+
+        // Set device discoverable
+        if (bluetoothAdapter?.scanMode != BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) {
+            log("Setting device discoverable...")
+            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+            }
+            context.startActivity(intent)
+            log("✓ Device is now discoverable for 5 minutes")
+        }
+
+        // Update UI state
+        handler.post {
+            connectionListener?.onConnectionStateChanged(ConnectionState.ADVERTISING)
         }
     }
 

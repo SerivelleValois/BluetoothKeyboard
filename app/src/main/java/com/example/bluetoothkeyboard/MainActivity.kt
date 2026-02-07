@@ -314,15 +314,14 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
             Toast.makeText(this, "蓝牙服务未初始化", Toast.LENGTH_SHORT).show()
             return
         }
-        // First, register the HID app by calling startAdvertising
+        // Register the HID app and wait for remote device to connect
         addLog("启动HID注册...")
         service.startAdvertising()
-        // Wait longer for registration, then connect to device
-        // Some devices take time to trigger onAppStatusChanged callback
+        // Short delay for registration to complete
         Handler(Looper.getMainLooper()).postDelayed({
-            addLog("连接到设备: ${device.name}")
+            addLog("等待对方设备连接: ${device.name}")
             service.connectToDevice(device)
-        }, 2000) // Increased from 500ms to 2000ms
+        }, 500)
     }
 
     private fun disconnect() {
