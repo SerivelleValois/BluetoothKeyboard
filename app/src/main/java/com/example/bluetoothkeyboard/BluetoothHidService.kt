@@ -28,7 +28,6 @@ class BluetoothHidService(private val context: Context) {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var hidDevice: BluetoothHidDevice? = null
     private var hidDeviceApp: BluetoothHidDeviceAppSdpSettings? = null
-    private var callback: HidDeviceCallback? = null
     private var appRegistered = false
     
     private val handler = Handler(Looper.getMainLooper())
@@ -107,7 +106,7 @@ class BluetoothHidService(private val context: Context) {
                 if (profile == BluetoothProfile.HID_DEVICE) {
                     hidDevice = proxy as BluetoothHidDevice
                     log("✓ HID Device service connected: $hidDevice")
-                    setupHidCallback()
+                    // Callback will be set when startAdvertising is called
                 } else {
                     Log.w(TAG, "Profile connected but not HID_DEVICE: $profile")
                 }
@@ -123,30 +122,64 @@ class BluetoothHidService(private val context: Context) {
         }, BluetoothProfile.HID_DEVICE)
     }
     
-    private fun setupHidCallback() {
-        log("========== SETUP HID CALLBACK ==========")
+    private fun stateName(state: Int): String {
+        return when (state) {
+            BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
+            BluetoothProfile.STATE_CONNECTING -> "CONNECTING"
+            BluetoothProfile.STATE_DISCONNECTED -> "DISCONNECTED"
+            BluetoothProfile.STATE_DISCONNECTING -> "DISCONNECTING"
+            else -> "UNKNOWN($state)"
+        }
+    }
+    
+    fun startAdvertising() {
+        log("========== START ADVERTISING ==========")
+        log("Bluetooth adapter: ${bluetoothAdapter?.name} (${bluetoothAdapter?.address})")
+        log("HID Device available: ${hidDevice != null}")
+
         val device = hidDevice ?: run {
-            log("ERROR: hidDevice is null")
+            log("ERROR: HID device not initialized")
+            connectionListener?.onError("HID device not initialized")
             return
         }
 
-        log("Creating HID device callback...")
-        callback = object : HidDeviceCallback() {
+        if (device.connectedDevices.isNotEmpty()) {
+            log("Already connected to a device")
+            return
+        }
+
+        handler.post {
+            connectionListener?.onConnectionStateChanged(ConnectionState.ADVERTISING)
+        }
+
+        // Create SDP settings
+        val app = BluetoothHidDeviceAppSdpSettings(
+            "Android BT Keyboard",
+            "Manufacturer",
+            "Model",
+            "Bluetooth Keyboard for testing",
+            HidConstants.HID_DESCRIPTOR,
+            KEYBOARD_REPORT_DESCRIPTOR
+        )
+
+        log("Created SDP settings: ${app.name}")
+
+        // Create callback
+        val cb = object : BluetoothHidDevice.Callback() {
             override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-                super.onAppStatusChanged(pluggedDevice, registered)
                 log("========== APP STATUS CHANGED ==========")
                 log("Device: $pluggedDevice")
                 log("Registered: $registered")
                 if (registered) {
+                    appRegistered = true
                     log("✓ HID app registered successfully")
-                    startAdvertising()
+                    // Device is now ready to accept connections
                 } else {
                     log("ERROR: ✗ HID app registration failed")
                 }
             }
 
             override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
-                super.onConnectionStateChanged(device, state)
                 log("========== CONNECTION STATE CHANGED ==========")
                 log("Device: ${device.name} (${device.address})")
                 log("State: $state (${stateName(state)})")
@@ -178,77 +211,27 @@ class BluetoothHidService(private val context: Context) {
             }
 
             override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {
-                super.onGetReport(device, type, id, bufferSize)
                 log("Get report: ${device.address}, type=$type, id=$id, size=$bufferSize")
-                // Handle GET_REPORT request
                 val report = ByteArray(HidConstants.REPORT_SIZE)
                 hidDevice?.replyReport(device, type, id, report)
             }
 
             override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {
-                super.onSetReport(device, type, id, data)
                 log("Set report: ${device.address}, type=$type, id=$id, data=${data.size} bytes")
-                // Handle SET_REPORT (e.g., LED indicators)
             }
 
             override fun onSetProtocol(device: BluetoothDevice, protocol: Byte) {
-                super.onSetProtocol(device, protocol)
                 log("Set protocol: ${device.address}, protocol=$protocol")
             }
 
             override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {
-                super.onInterruptData(device, reportId, data)
                 log("Interrupt data: ${device.address}, reportId=$reportId, data=${data.size} bytes")
             }
         }
 
-        hidDeviceApp?.let { app ->
-            callback?.let { cb ->
-                log("Calling registerApp with app: ${app.name}")
-                log("App SDP settings: name=${app.name}, desc=${app.description}")
-                // registerApp(sdp, inQos, outQos, executor, callback)
-                val result = hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
-                log("registerApp result: $result")
-            } ?: run {
-                log("ERROR: callback is null")
-            }
-        } ?: run {
-            log("ERROR: hidDeviceApp is null")
-        }
-    }
-
-    private fun stateName(state: Int): String {
-        return when (state) {
-            BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
-            BluetoothProfile.STATE_CONNECTING -> "CONNECTING"
-            BluetoothProfile.STATE_DISCONNECTED -> "DISCONNECTED"
-            BluetoothProfile.STATE_DISCONNECTING -> "DISCONNECTING"
-            else -> "UNKNOWN($state)"
-        }
-    }
-    
-    fun startAdvertising() {
-        log("========== START ADVERTISING ==========")
-        log("Bluetooth adapter: ${bluetoothAdapter?.name} (${bluetoothAdapter?.address})")
-        log("HID Device available: ${hidDevice != null}")
-        
-        val device = hidDevice ?: run {
-            log("ERROR: HID device not initialized")
-            connectionListener?.onError("HID device not initialized")
-            return
-        }
-        
-        if (device.connectedDevices.isNotEmpty()) {
-            log("Already connected to a device")
-            return
-        }
-        
-        handler.post {
-            connectionListener?.onConnectionStateChanged(ConnectionState.ADVERTISING)
-        }
-        
-        // The device will be discoverable as a HID keyboard
-        log("Started advertising as HID keyboard")
+        log("Calling registerApp...")
+        val result = hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
+        log("registerApp result: $result")
     }
     
     fun connectToDevice(device: BluetoothDevice) {
@@ -414,20 +397,7 @@ class BluetoothHidService(private val context: Context) {
     
     fun cleanup() {
         disconnect()
-        callback = null
         hidDevice?.unregisterApp()
         bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice)
     }
-}
-
-/**
- * Callback for HID device events
- */
-abstract class HidDeviceCallback : BluetoothHidDevice.Callback() {
-    override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {}
-    override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {}
-    override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {}
-    override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {}
-    override fun onSetProtocol(device: BluetoothDevice, protocol: Byte) {}
-    override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {}
 }
