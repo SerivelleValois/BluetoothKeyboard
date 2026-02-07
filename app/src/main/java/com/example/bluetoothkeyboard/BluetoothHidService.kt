@@ -145,7 +145,7 @@ class BluetoothHidService(private val context: Context) {
                 super.onGetReport(device, type, id, bufferSize)
                 // Handle GET_REPORT request
                 val report = ByteArray(HidConstants.REPORT_SIZE)
-                device.replyReport(type, id, report)
+                hidDevice?.replyReport(device, type, id, report)
             }
             
             override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {
@@ -164,7 +164,7 @@ class BluetoothHidService(private val context: Context) {
         
         hidDeviceApp?.let { app ->
             callback?.let { cb ->
-                device.registerApp(app, null, cb, handler)
+                hidDevice?.registerApp(app, cb, handler)
             }
         }
     }
