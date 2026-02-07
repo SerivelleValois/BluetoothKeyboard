@@ -164,15 +164,8 @@ class BluetoothHidService(private val context: Context) {
         
         hidDeviceApp?.let { app ->
             callback?.let { cb ->
-                // Try different registerApp signatures
-                try {
-                    // Newer API: registerApp(sdpSettings, executor, callback)
-                    hidDevice?.registerApp(app, context.mainExecutor, cb)
-                } catch (e: Exception) {
-                    // Fallback to older API
-                    @Suppress("DEPRECATION")
-                    hidDevice?.registerApp(app, null, cb, handler)
-                }
+                // registerApp(sdp, inQos, outQos, executor, callback)
+                hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
             }
         }
     }
