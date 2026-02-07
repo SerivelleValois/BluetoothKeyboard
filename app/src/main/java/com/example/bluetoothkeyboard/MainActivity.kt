@@ -310,9 +310,18 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
     }
 
     private fun connectToDevice(device: BluetoothDevice) {
-        bluetoothHidService?.connectToDevice(device) ?: run {
+        val service = bluetoothHidService ?: run {
             Toast.makeText(this, "蓝牙服务未初始化", Toast.LENGTH_SHORT).show()
+            return
         }
+        // First, register the HID app by calling startAdvertising
+        addLog("启动HID注册...")
+        service.startAdvertising()
+        // Wait a moment for registration, then connect to device
+        Handler(Looper.getMainLooper()).postDelayed({
+            addLog("连接到设备: ${device.name}")
+            service.connectToDevice(device)
+        }, 500)
     }
 
     private fun disconnect() {

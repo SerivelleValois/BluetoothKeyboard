@@ -133,6 +133,12 @@ class BluetoothHidService(private val context: Context) {
     }
     
     fun startAdvertising() {
+        // Check if already registered
+        if (appRegistered) {
+            log("HID app already registered, skipping...")
+            return
+        }
+
         log("========== START ADVERTISING ==========")
         log("Bluetooth adapter: ${bluetoothAdapter?.name} (${bluetoothAdapter?.address})")
         log("HID Device available: ${hidDevice != null}")
