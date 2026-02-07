@@ -4,22 +4,33 @@ import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.text.format.DateFormat
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Main activity for Bluetooth Keyboard application
@@ -40,6 +51,8 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
     private var bluetoothHidService: BluetoothHidService? = null
     private var isConnected = false
+    private val logBuffer = StringBuilder()
+    private val logHandler = Handler(Looper.getMainLooper())
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -72,6 +85,7 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         statusText = findViewById(R.id.statusText)
         connectButton = findViewById(R.id.connectButton)
         disconnectButton = findViewById(R.id.disconnectButton)
+        val logButton = findViewById<Button>(R.id.logButton)
         keyboardView = findViewById(R.id.keyboardView)
 
         keyboardView.setKeyListener(this)
@@ -82,6 +96,10 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
         disconnectButton.setOnClickListener {
             disconnect()
+        }
+
+        logButton.setOnClickListener {
+            showLogDialog()
         }
 
         // Disable keyboard until connected
@@ -177,6 +195,11 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
                 return
             }
             bluetoothHidService = BluetoothHidService(this).apply {
+                setLogListener(object : BluetoothHidService.LogListener {
+                    override fun onLog(message: String) {
+                        addLog("[HID] $message")
+                    }
+                })
                 setConnectionListener(object : BluetoothHidService.ConnectionListener {
                     override fun onConnectionStateChanged(state: BluetoothHidService.ConnectionState) {
                         runOnUiThread {
@@ -399,5 +422,54 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         super.onDestroy()
         bluetoothHidService?.cleanup()
         keyboardView.releaseAllKeys()
+    }
+
+    private fun showLogDialog() {
+        val logView = ScrollView(this)
+        val textView = TextView(this).apply {
+            text = logBuffer.toString()
+            textSize = 10f
+            textColor = Color.WHITE
+            setBackgroundColor(Color.BLACK)
+            setPadding(16, 16, 16, 16)
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        logView.addView(textView)
+
+        AlertDialog.Builder(this)
+            .setTitle("Debug 日志")
+            .setView(logView)
+            .setPositiveButton("刷新") { _, _ ->
+                showLogDialog()
+            }
+            .setNegativeButton("复制") { _, _ ->
+                copyToClipboard(logBuffer.toString())
+            }
+            .setNeutralButton("清除") { _, _ ->
+                logBuffer.clear()
+                addLog("=== 日志已清除 ===")
+                showLogDialog()
+            }
+            .show()
+    }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Debug Log", text)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
+    }
+
+    fun addLog(message: String) {
+        val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        logBuffer.append("[$timestamp] $message\n")
+        // Limit log size
+        if (logBuffer.length > 50000) {
+            val start = logBuffer.indexOf("\n", 1000)
+            if (start > 0) {
+                logBuffer.delete(0, start + 1)
+            }
+        }
     }
 }
