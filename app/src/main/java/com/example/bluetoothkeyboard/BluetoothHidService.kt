@@ -155,11 +155,10 @@ class BluetoothHidService(private val context: Context) {
         // Create SDP settings
         val app = BluetoothHidDeviceAppSdpSettings(
             "Android BT Keyboard",
+            "Bluetooth Keyboard",
             "Manufacturer",
-            "Model",
-            "Bluetooth Keyboard for testing",
-            HidConstants.HID_DESCRIPTOR,
-            KEYBOARD_REPORT_DESCRIPTOR
+            BluetoothHidDevice.SUBCLASS1_COMBO,
+            HidConstants.KEYBOARD_HID_DESCRIPTOR
         )
 
         log("Created SDP settings: ${app.name}")
