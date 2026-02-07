@@ -114,6 +114,40 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         }
     }
 
+    /**
+     * Check if device supports HID Device profile
+     */
+    private fun isHidDeviceSupported(): Boolean {
+        return try {
+            // Try to get HID Device profile
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter() ?: return false
+            val method = bluetoothAdapter.javaClass.getMethod("getProfileProxy",
+                Context::class.java,
+                Class.forName("android.bluetooth.BluetoothProfile\$ServiceListener"),
+                Int::class.javaPrimitiveType
+            )
+            // HID_DEVICE profile value is 19
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun showHidNotSupportedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("设备不支持")
+            .setMessage("您的设备不支持蓝牙HID设备功能。\n\n" +
+                    "部分手机厂商（如小米、OPPO、vivo、一加等）禁用了此功能。\n\n" +
+                    "解决方法：\n" +
+                    "1. 使用支持HID功能的手机（原生Android或三星）\n" +
+                    "2. 刷入支持HID的ROM\n" +
+                    "3. 使用ROOT权限启用该功能")
+            .setPositiveButton("确定") { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
     private fun checkBluetoothSupport() {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
 
@@ -137,6 +171,11 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
     private fun initHidService() {
         try {
+            // Check if device supports HID Device profile
+            if (!isHidDeviceSupported()) {
+                showHidNotSupportedDialog()
+                return
+            }
             bluetoothHidService = BluetoothHidService(this).apply {
                 setConnectionListener(object : BluetoothHidService.ConnectionListener {
                     override fun onConnectionStateChanged(state: BluetoothHidService.ConnectionState) {
@@ -261,11 +300,15 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
     private fun showPairingInstructions() {
         AlertDialog.Builder(this)
             .setTitle("配对说明")
-            .setMessage("1. 打开电脑蓝牙设置\n2. 搜索 \"Android BT Keyboard\"\n3. 点击配对\n4. 配对成功后即可使用")
+            .setMessage("重要：请确保删除之前与电脑的所有配对记录！\n\n" +
+                    "1. 先在手机蓝牙设置中删除与电脑的配对\n" +
+                    "2. 在电脑蓝牙设置中删除与手机的配对\n" +
+                    "3. 保持本应用打开\n" +
+                    "4. 从电脑蓝牙设置中搜索并发起配对请求\n" +
+                    "5. 在手机弹出的配对请求中点击\"配对\"\n\n" +
+                    "如果连接失败，请重启蓝牙后重试。")
             .setPositiveButton("打开蓝牙设置") { _, _ ->
-                // Open system Bluetooth settings
-                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-                startActivity(intent)
+                startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
             }
             .setNegativeButton("取消", null)
             .show()
