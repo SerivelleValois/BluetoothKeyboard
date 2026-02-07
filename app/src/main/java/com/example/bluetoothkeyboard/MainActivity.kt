@@ -429,7 +429,7 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         val textView = TextView(this).apply {
             text = logBuffer.toString()
             textSize = 10f
-            textColor = Color.WHITE
+            setTextColor(Color.WHITE)
             setBackgroundColor(Color.BLACK)
             setPadding(16, 16, 16, 16)
             typeface = Typeface.MONOSPACE
