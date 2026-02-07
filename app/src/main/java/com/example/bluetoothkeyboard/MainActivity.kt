@@ -317,11 +317,12 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         // First, register the HID app by calling startAdvertising
         addLog("启动HID注册...")
         service.startAdvertising()
-        // Wait a moment for registration, then connect to device
+        // Wait longer for registration, then connect to device
+        // Some devices take time to trigger onAppStatusChanged callback
         Handler(Looper.getMainLooper()).postDelayed({
             addLog("连接到设备: ${device.name}")
             service.connectToDevice(device)
-        }, 500)
+        }, 2000) // Increased from 500ms to 2000ms
     }
 
     private fun disconnect() {

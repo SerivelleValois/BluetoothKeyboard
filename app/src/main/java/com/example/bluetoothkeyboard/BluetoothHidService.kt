@@ -237,6 +237,12 @@ class BluetoothHidService(private val context: Context) {
         log("Calling registerApp...")
         val result = hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
         log("registerApp result: $result")
+        // Fallback: some devices don't trigger onAppStatusChanged callback
+        // If registerApp returns true, consider it registered
+        if (result == true) {
+            log("Setting appRegistered = true (fallback)")
+            appRegistered = true
+        }
     }
     
     fun connectToDevice(device: BluetoothDevice) {
