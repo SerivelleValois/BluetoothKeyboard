@@ -164,12 +164,9 @@ class BluetoothHidService(private val context: Context) {
         
         hidDeviceApp?.let { app ->
             callback?.let { cb ->
-                // registerApp(sdpSettings, qosSettings, callback, handler)
-                val qosSettings = BluetoothHidDeviceAppQosSettings.Builder(
-                    BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-                    0, 0, 0, 0, 0
-                ).build()
-                hidDevice?.registerApp(app, qosSettings, cb, handler)
+                // registerApp(sdpSettings, qosSettings, executor, callback)
+                val executor = context.mainExecutor
+                hidDevice?.registerApp(app, null, executor, cb)
             }
         }
     }
