@@ -29,6 +29,7 @@ class BluetoothHidService(private val context: Context) {
     private var hidDevice: BluetoothHidDevice? = null
     private var hidDeviceApp: BluetoothHidDeviceAppSdpSettings? = null
     private var callback: HidDeviceCallback? = null
+    private var appRegistered = false
     
     private val handler = Handler(Looper.getMainLooper())
     private var connectionListener: ConnectionListener? = null
@@ -78,100 +79,152 @@ class BluetoothHidService(private val context: Context) {
     }
     
     private fun registerHidDevice() {
-        val adapter = bluetoothAdapter ?: return
-        
+        Log.d(TAG, "========== REGISTER HID DEVICE ==========")
+        val adapter = bluetoothAdapter ?: run {
+            Log.e(TAG, "Bluetooth adapter is null")
+            return
+        }
+
         if (!adapter.isEnabled) {
             Log.e(TAG, "Bluetooth is disabled")
             return
         }
-        
+
+        Log.d(TAG, "Getting HID Device profile proxy...")
         // Get HID device proxy
         adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                Log.d(TAG, "onServiceConnected: profile=$profile, proxy=$proxy")
                 if (profile == BluetoothProfile.HID_DEVICE) {
                     hidDevice = proxy as BluetoothHidDevice
+                    Log.d(TAG, "✓ HID Device service connected: $hidDevice")
                     setupHidCallback()
-                    Log.d(TAG, "HID Device service connected")
+                } else {
+                    Log.w(TAG, "Profile connected but not HID_DEVICE: $profile")
                 }
             }
-            
+
             override fun onServiceDisconnected(profile: Int) {
+                Log.d(TAG, "onServiceDisconnected: profile=$profile")
                 if (profile == BluetoothProfile.HID_DEVICE) {
                     hidDevice = null
-                    Log.d(TAG, "HID Device service disconnected")
+                    Log.d(TAG, "✗ HID Device service disconnected")
                 }
             }
         }, BluetoothProfile.HID_DEVICE)
     }
     
     private fun setupHidCallback() {
-        val device = hidDevice ?: return
-        
+        Log.d(TAG, "========== SETUP HID CALLBACK ==========")
+        val device = hidDevice ?: run {
+            Log.e(TAG, "hidDevice is null")
+            return
+        }
+
+        Log.d(TAG, "Creating HID device callback...")
         callback = object : HidDeviceCallback() {
             override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
                 super.onAppStatusChanged(pluggedDevice, registered)
-                Log.d(TAG, "App status changed: registered=$registered")
+                Log.d(TAG, "========== APP STATUS CHANGED ==========")
+                Log.d(TAG, "Device: $pluggedDevice")
+                Log.d(TAG, "Registered: $registered")
                 if (registered) {
+                    Log.d(TAG, "✓ HID app registered successfully")
                     startAdvertising()
+                } else {
+                    Log.e(TAG, "✗ HID app registration failed")
                 }
             }
-            
+
             override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
                 super.onConnectionStateChanged(device, state)
+                Log.d(TAG, "========== CONNECTION STATE CHANGED ==========")
+                Log.d(TAG, "Device: ${device.name} (${device.address})")
+                Log.d(TAG, "State: $state (${stateName(state)})")
                 when (state) {
                     BluetoothProfile.STATE_CONNECTED -> {
-                        Log.d(TAG, "Device connected: ${device.address}")
+                        Log.d(TAG, "✓ Device connected: ${device.address}")
                         handler.post {
                             connectionListener?.onDeviceConnected(device)
                             connectionListener?.onConnectionStateChanged(ConnectionState.CONNECTED)
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
-                        Log.d(TAG, "Device disconnected: ${device.address}")
+                        Log.d(TAG, "✗ Device disconnected: ${device.address}")
                         handler.post {
                             connectionListener?.onDeviceDisconnected(device)
                             connectionListener?.onConnectionStateChanged(ConnectionState.DISCONNECTED)
                         }
                     }
                     BluetoothProfile.STATE_CONNECTING -> {
+                        Log.d(TAG, "→ Connecting to: ${device.address}")
                         handler.post {
                             connectionListener?.onConnectionStateChanged(ConnectionState.CONNECTING)
                         }
                     }
+                    BluetoothProfile.STATE_DISCONNECTING -> {
+                        Log.d(TAG, "→ Disconnecting from: ${device.address}")
+                    }
                 }
             }
-            
+
             override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {
                 super.onGetReport(device, type, id, bufferSize)
+                Log.d(TAG, "Get report: ${device.address}, type=$type, id=$id, size=$bufferSize")
                 // Handle GET_REPORT request
                 val report = ByteArray(HidConstants.REPORT_SIZE)
                 hidDevice?.replyReport(device, type, id, report)
             }
-            
+
             override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {
                 super.onSetReport(device, type, id, data)
+                Log.d(TAG, "Set report: ${device.address}, type=$type, id=$id, data=${data.size} bytes")
                 // Handle SET_REPORT (e.g., LED indicators)
             }
-            
+
             override fun onSetProtocol(device: BluetoothDevice, protocol: Byte) {
                 super.onSetProtocol(device, protocol)
+                Log.d(TAG, "Set protocol: ${device.address}, protocol=$protocol")
             }
-            
+
             override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {
                 super.onInterruptData(device, reportId, data)
+                Log.d(TAG, "Interrupt data: ${device.address}, reportId=$reportId, data=${data.size} bytes")
             }
         }
-        
+
         hidDeviceApp?.let { app ->
             callback?.let { cb ->
+                Log.d(TAG, "Calling registerApp with app: ${app.name}")
+                Log.d(TAG, "App SDP settings: name=${app.name}, desc=${app.description}")
                 // registerApp(sdp, inQos, outQos, executor, callback)
-                hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
+                val result = hidDevice?.registerApp(app, null, null, context.mainExecutor, cb)
+                Log.d(TAG, "registerApp result: $result")
+            } ?: run {
+                Log.e(TAG, "callback is null")
             }
+        } ?: run {
+            Log.e(TAG, "hidDeviceApp is null")
+        }
+    }
+
+    private fun stateName(state: Int): String {
+        return when (state) {
+            BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
+            BluetoothProfile.STATE_CONNECTING -> "CONNECTING"
+            BluetoothProfile.STATE_DISCONNECTED -> "DISCONNECTED"
+            BluetoothProfile.STATE_DISCONNECTING -> "DISCONNECTING"
+            else -> "UNKNOWN($state)"
         }
     }
     
     fun startAdvertising() {
+        Log.d(TAG, "========== START ADVERTISING ==========")
+        Log.d(TAG, "Bluetooth adapter: ${bluetoothAdapter?.name} (${bluetoothAdapter?.address})")
+        Log.d(TAG, "HID Device available: ${hidDevice != null}")
+        
         val device = hidDevice ?: run {
+            Log.e(TAG, "HID device not initialized")
             connectionListener?.onError("HID device not initialized")
             return
         }
@@ -190,16 +243,40 @@ class BluetoothHidService(private val context: Context) {
     }
     
     fun connectToDevice(device: BluetoothDevice) {
+        Log.d(TAG, "========== CONNECT TO DEVICE ==========")
+        Log.d(TAG, "Target device: ${device.name} (${device.address})")
+        Log.d(TAG, "Bond state: ${bondStateName(device.bondState)}")
+        Log.d(TAG, "HID device initialized: ${hidDevice != null}")
+        Log.d(TAG, "App registered: $appRegistered")
+
         val hid = hidDevice ?: run {
+            Log.e(TAG, "✗ HID device not initialized")
             connectionListener?.onError("HID device not initialized")
             return
         }
-        
+
+        if (!appRegistered) {
+            Log.e(TAG, "✗ HID app not registered yet")
+            connectionListener?.onError("HID app not registered, please wait...")
+            return
+        }
+
         try {
+            Log.d(TAG, "Calling hid.connect()...")
             hid.connect(device)
+            Log.d(TAG, "hid.connect() called successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to connect", e)
+            Log.e(TAG, "✗ Failed to connect", e)
             connectionListener?.onError("Failed to connect: ${e.message}")
+        }
+    }
+
+    private fun bondStateName(state: Int): String {
+        return when (state) {
+            BluetoothDevice.BOND_NONE -> "NONE"
+            BluetoothDevice.BOND_BONDING -> "BONDING"
+            BluetoothDevice.BOND_BONDED -> "BONDED"
+            else -> "UNKNOWN($state)"
         }
     }
     
