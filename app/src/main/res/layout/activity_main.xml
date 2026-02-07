@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1a1a2e"
+    android:padding="8dp">
+
+    <!-- Status Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp"
+        android:background="#16213e">
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="状态: 未连接"
+            android:textColor="#e94560"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/connectButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="连接"
+            android:textColor="#ffffff"
+            android:backgroundTint="#e94560"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/disconnectButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="断开"
+            android:textColor="#ffffff"
+            android:backgroundTint="#4a4a6a"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Instructions -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="支持多点触控和长按 | 可同时按下多个键"
+        android:textColor="#a0a0a0"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:padding="8dp" />
+
+    <!-- Keyboard View -->
+    <com.example.bluetoothkeyboard.MultiTouchKeyboardView
+        android:id="@+id/keyboardView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp"
+        android:enabled="false" />
+
+    <!-- Bottom Info -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Android BT Keyboard | 长按支持重复输入"
+        android:textColor="#666666"
+        android:textSize="10sp"
+        android:gravity="center"
+        android:padding="4dp" />
+
+</LinearLayout>
