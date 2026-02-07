@@ -198,9 +198,58 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
     }
 
     private fun checkBluetoothAndConnect() {
-        bluetoothHidService?.startAdvertising() ?: run {
+        if (bluetoothHidService == null) {
             Toast.makeText(this, "蓝牙服务未初始化", Toast.LENGTH_SHORT).show()
             checkBluetoothSupport()
+            return
+        }
+        showDeviceList()
+    }
+
+    private fun showDeviceList() {
+        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter() ?: return
+
+        // Check permission
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+            != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "需要蓝牙权限", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Get paired devices
+        val pairedDevices = bluetoothAdapter.bondedDevices?.toList() ?: emptyList()
+
+        if (pairedDevices.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("没有配对设备")
+                .setMessage("请先与目标设备配对:\n1. 打开系统蓝牙设置\n2. 搜索并配对目标设备\n3. 返回本应用重试")
+                .setPositiveButton("打开蓝牙设置") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                }
+                .setNegativeButton("取消", null)
+                .show()
+            return
+        }
+
+        // Show device list
+        val deviceNames = pairedDevices.map { it.name ?: "未知设备 (${it.address})" }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("选择要连接的设备")
+            .setItems(deviceNames) { _, which ->
+                val device = pairedDevices[which]
+                connectToDevice(device)
+            }
+            .setPositiveButton("刷新") { _, _ ->
+                showDeviceList()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun connectToDevice(device: BluetoothDevice) {
+        bluetoothHidService?.connectToDevice(device) ?: run {
+            Toast.makeText(this, "蓝牙服务未初始化", Toast.LENGTH_SHORT).show()
         }
     }
 
