@@ -265,7 +265,31 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
             checkBluetoothSupport()
             return
         }
-        showDeviceList()
+        showConnectionOptions()
+    }
+
+    private fun showConnectionOptions() {
+        AlertDialog.Builder(this)
+            .setTitle("选择连接方式")
+            .setItems(arrayOf("开始等待设备连接", "选择已配对设备")) { _, which ->
+                when (which) {
+                    0 -> startWaitingForConnection()
+                    1 -> showDeviceList()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun startWaitingForConnection() {
+        val service = bluetoothHidService ?: return
+        addLog("启动HID注册...")
+        service.startAdvertising()
+        addLog("等待对方设备搜索并连接...")
+        Handler(Looper.getMainLooper()).postDelayed({
+            addLog("设备已准备就绪")
+            service.connectToDevice(null) // null means wait for any device
+        }, 500)
     }
 
     private fun showDeviceList() {
@@ -284,23 +308,31 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         if (pairedDevices.isEmpty()) {
             AlertDialog.Builder(this)
                 .setTitle("没有配对设备")
-                .setMessage("请先与目标设备配对:\n1. 打开系统蓝牙设置\n2. 搜索并配对目标设备\n3. 返回本应用重试")
-                .setPositiveButton("打开蓝牙设置") { _, _ ->
+                .setMessage("未找到已配对的设备。\n\n可以选择：\n1. 开始等待新设备连接\n2. 先去蓝牙设置中配对设备")
+                .setPositiveButton("开始等待") { _, _ ->
+                    startWaitingForConnection()
+                }
+                .setNegativeButton("去配对") { _, _ ->
                     startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }
-                .setNegativeButton("取消", null)
+                .setNeutralButton("取消", null)
                 .show()
             return
         }
 
         // Show device list
-        val deviceNames = pairedDevices.map { it.name ?: "未知设备 (${it.address})" }.toTypedArray()
+        val options = pairedDevices.map { it.name ?: "未知设备 (${it.address})" }.toMutableList()
+        options.add("开始等待新设备连接")
 
         AlertDialog.Builder(this)
             .setTitle("选择要连接的设备")
-            .setItems(deviceNames) { _, which ->
-                val device = pairedDevices[which]
-                connectToDevice(device)
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which < pairedDevices.size) {
+                    val device = pairedDevices[which]
+                    connectToDevice(device)
+                } else {
+                    startWaitingForConnection()
+                }
             }
             .setPositiveButton("刷新") { _, _ ->
                 showDeviceList()

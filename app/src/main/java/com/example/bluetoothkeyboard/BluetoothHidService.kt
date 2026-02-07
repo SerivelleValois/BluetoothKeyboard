@@ -246,10 +246,14 @@ class BluetoothHidService(private val context: Context) {
         }
     }
     
-    fun connectToDevice(device: BluetoothDevice) {
+    fun connectToDevice(device: BluetoothDevice?) {
         log("========== WAITING FOR CONNECTION ==========")
-        log("Target device: ${device.name} (${device.address})")
-        log("Bond state: ${bondStateName(device.bondState)}")
+        if (device != null) {
+            log("Target device: ${device.name} (${device.address})")
+            log("Bond state: ${bondStateName(device.bondState)}")
+        } else {
+            log("Waiting for any device to connect...")
+        }
         log("HID device initialized: ${hidDevice != null}")
         log("App registered: $appRegistered")
 
@@ -275,6 +279,7 @@ class BluetoothHidService(private val context: Context) {
             log("Setting device discoverable...")
             val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
                 putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             log("✓ Device is now discoverable for 5 minutes")
