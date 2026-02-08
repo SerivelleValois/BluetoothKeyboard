@@ -130,7 +130,7 @@ class BluetoothHidService(private val context: Context) {
 
         log("Getting HID Device profile proxy...")
         // Get HID device proxy
-        adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
+        adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                 log("onServiceConnected: profile=$profile, proxy=$proxy")
                 if (profile == BluetoothProfile.HID_DEVICE) {

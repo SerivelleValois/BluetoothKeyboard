@@ -85,8 +85,9 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
                             cancelPairingTimeout()
                             pairingTimeoutRunnable = Runnable {
                                 addLog("✗ 配对超时: ${device?.name}")
-                                // Cancel bonding if timeout
-                                device?.cancelBondProcess()
+                                // Note: There's no direct API to cancel ongoing bonding
+                                // User needs to cancel from Bluetooth settings
+                                updateStatus("配对超时，请取消后重试", false)
                             }
                             logHandler.postDelayed(pairingTimeoutRunnable!!, PAIRING_TIMEOUT_MS)
                         }
