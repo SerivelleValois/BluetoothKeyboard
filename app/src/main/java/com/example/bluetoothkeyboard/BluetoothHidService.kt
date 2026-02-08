@@ -77,21 +77,23 @@ class BluetoothHidService(private val context: Context) {
         CONNECTED
     }
 
-    private var foregroundService: BluetoothHidForegroundService? = null
-
     init {
         initialize()
         startForegroundService()
     }
 
     private fun startForegroundService() {
-        foregroundService = BluetoothHidForegroundService(context)
-        foregroundService?.start()
+        val intent = Intent(context, BluetoothHidForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
     }
 
     private fun stopForegroundService() {
-        foregroundService?.stop()
-        foregroundService = null
+        val intent = Intent(context, BluetoothHidForegroundService::class.java)
+        context.stopService(intent)
     }
 
     private fun initialize() {
@@ -475,84 +477,5 @@ class BluetoothHidService(private val context: Context) {
         hidDevice?.unregisterApp()
         bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice)
         stopForegroundService()
-    }
-}
-
-/**
- * Foreground service to keep the Bluetooth HID service running
- */
-class BluetoothHidForegroundService(private val context: Context) : Service() {
-
-    companion object {
-        private const val CHANNEL_ID = "bluetooth_hid_channel"
-        private const val NOTIFICATION_ID = 1001
-    }
-
-    private var isRunning = false
-
-    fun start() {
-        if (!isRunning) {
-            val intent = Intent(context, BluetoothHidForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-            isRunning = true
-        }
-    }
-
-    fun stop() {
-        if (isRunning) {
-            val intent = Intent(context, BluetoothHidForegroundService::class.java)
-            context.stopService(intent)
-            isRunning = false
-        }
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, createNotification())
-        return START_STICKY
-    }
-
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "蓝牙键盘服务",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "蓝牙HID设备连接服务"
-                setShowBadge(false)
-            }
-
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.createNotificationChannel(channel)
-        }
-    }
-
-    private fun createNotification(): Notification {
-        val mainIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context, 0, mainIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle("蓝牙键盘运行中")
-            .setContentText("等待设备连接...")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build()
     }
 }
