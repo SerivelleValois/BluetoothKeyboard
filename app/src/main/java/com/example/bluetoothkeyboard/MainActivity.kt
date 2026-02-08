@@ -113,6 +113,23 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Set up global exception handler
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            addLog("========== CRASH ==========")
+            addLog("Thread: ${thread.name}")
+            addLog("Exception: ${throwable.javaClass.name}")
+            addLog("Message: ${throwable.message}")
+            addLog("Stack trace:")
+            throwable.stackTrace.forEach {
+                addLog("  at $it")
+            }
+            addLog("==========================")
+            // Save logs before crashing
+            forceSaveAllLogs()
+            // Call original handler
+            Thread.getDefaultUncaughtExceptionHandler()?.uncaughtException(thread, throwable)
+        }
+
         setContentView(R.layout.activity_main)
 
         initViews()
@@ -533,8 +550,8 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
             .setPositiveButton("刷新") { _, _ ->
                 showLogDialog()
             }
-            .setNegativeButton("复制") { _, _ ->
-                copyToClipboard(logBuffer.toString())
+            .setNegativeButton("导出日志") { _, _ ->
+                exportLogs()
             }
             .setNeutralButton("清除") { _, _ ->
                 logBuffer.clear()
@@ -544,22 +561,73 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
             .show()
     }
 
-    private fun copyToClipboard(text: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Debug Log", text)
-        clipboard.setPrimaryClip(clip)
-        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
-    }
+    private fun exportLogs() {
+        try {
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val logDir = getExternalFilesDir(null)?.resolve("logs")
+            if (logDir != null) {
+                if (!logDir.exists()) {
+                    logDir.mkdirs()
+                }
+                val logFile = logDir.resolve("bluetooth_keyboard_${timestamp}.log")
+                logFile.writeText(logBuffer.toString())
 
+                // Share the log file
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, android.net.Uri.fromFile(logFile))
+                    putExtra(Intent.EXTRA_SUBJECT, "蓝牙键盘日志")
+                }
+                startActivity(Intent.createChooser(shareIntent, "分享日志"))
+                Toast.makeText(this, "日志已导出: ${logFile.absolutePath}", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
     fun addLog(message: String) {
-        val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        logBuffer.append("[$timestamp] $message\n")
-        // Limit log size
-        if (logBuffer.length > 50000) {
-            val start = logBuffer.indexOf("\n", 1000)
-            if (start > 0) {
-                logBuffer.delete(0, start + 1)
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            val logEntry = "[$timestamp] $message\n"
+            logBuffer.append(logEntry)
+            // Limit log size
+            if (logBuffer.length > 50000) {
+                val start = logBuffer.indexOf("\n", 1000)
+                if (start > 0) {
+                    logBuffer.delete(0, start + 1)
+                }
+            }
+            // Save to file
+            saveLogToFile(logEntry)
+        }
+    
+        private fun saveLogToFile(message: String) {
+            try {
+                val logDir = getExternalFilesDir(null)?.resolve("logs")
+                if (logDir != null) {
+                    if (!logDir.exists()) {
+                        logDir.mkdirs()
+                    }
+                    val logFile = logDir.resolve("bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.log")
+                    logFile.appendText(message)
+                }
+            } catch (e: Exception) {
+                // Silently fail to avoid infinite loop
+            }
+        }
+    
+        private fun forceSaveAllLogs() {
+            try {
+                val logDir = getExternalFilesDir(null)?.resolve("logs")
+                if (logDir != null) {
+                    if (!logDir.exists()) {
+                        logDir.mkdirs()
+                    }
+                    val logFile = logDir.resolve("bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_crash.log")
+                    logFile.writeText(logBuffer.toString())
+                }
+            } catch (e: Exception) {
+                // Silently fail
             }
         }
     }
-}
