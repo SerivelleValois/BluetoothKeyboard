@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         private const val TAG = "MainActivity"
         private const val REQUEST_ENABLE_BT = 1
         private const val REQUEST_BLUETOOTH_PERMISSIONS = 2
+        private const val PAIRING_TIMEOUT_MS = 30000L // 30 seconds pairing timeout
     }
 
     private lateinit var statusText: TextView
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
     private var isConnected = false
     private val logBuffer = StringBuilder()
     private val logHandler = Handler(Looper.getMainLooper())
+    private var pairingTimeoutRunnable: Runnable? = null
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -66,6 +68,41 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
                         BluetoothAdapter.STATE_ON -> {
                             updateStatus("蓝牙已开启", false)
                             initHidService()
+                        }
+                    }
+                }
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                    val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
+                    val previousBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
+
+                    addLog("Bond state changed: ${device?.name} | $bondState (previous: $previousBondState)")
+
+                    when (bondState) {
+                        BluetoothDevice.BOND_BONDING -> {
+                            addLog("正在配对: ${device?.name}")
+                            // Start pairing timeout timer
+                            cancelPairingTimeout()
+                            pairingTimeoutRunnable = Runnable {
+                                addLog("✗ 配对超时: ${device?.name}")
+                                // Cancel bonding if timeout
+                                device?.cancelBondProcess()
+                            }
+                            logHandler.postDelayed(pairingTimeoutRunnable!!, PAIRING_TIMEOUT_MS)
+                        }
+                        BluetoothDevice.BOND_BONDED -> {
+                            addLog("✓ 配对成功: ${device?.name}")
+                            cancelPairingTimeout()
+                            // Bonding completed, device is now ready for HID connection
+                            bluetoothHidService?.connectToDevice(device)
+                        }
+                        BluetoothDevice.BOND_NONE -> {
+                            cancelPairingTimeout()
+                            if (previousBondState == BluetoothDevice.BOND_BONDED) {
+                                addLog("✗ 已取消配对: ${device?.name}")
+                            } else {
+                                addLog("✗ 配对失败: ${device?.name}")
+                            }
                         }
                     }
                 }
@@ -449,8 +486,11 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
     override fun onResume() {
         super.onResume()
-        // Register Bluetooth state receiver
-        val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
+        // Register Bluetooth state and bond state receivers
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        }
         registerReceiver(bluetoothStateReceiver, filter)
     }
 
@@ -461,8 +501,16 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelPairingTimeout()
         bluetoothHidService?.cleanup()
         keyboardView.releaseAllKeys()
+    }
+
+    private fun cancelPairingTimeout() {
+        pairingTimeoutRunnable?.let {
+            logHandler.removeCallbacks(it)
+            pairingTimeoutRunnable = null
+        }
     }
 
     private fun showLogDialog() {

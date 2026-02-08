@@ -1,11 +1,19 @@
 package com.example.bluetoothkeyboard
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.bluetooth.*
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -14,16 +22,24 @@ import java.util.concurrent.ConcurrentHashMap
  * Handles connection, pairing, and sending keyboard reports
  */
 class BluetoothHidService(private val context: Context) {
-    
+
     companion object {
         private const val TAG = "BluetoothHidService"
         private const val DEVICE_NAME = "Android BT Keyboard"
         private const val DEVICE_DESCRIPTION = "Bluetooth Keyboard"
         private const val DEVICE_PROVIDER = "Android"
         private const val DEVICE_SUBCLASS = 0x40  // Keyboard
-        
+
         // UUID for HID service
         private val HID_UUID = UUID.fromString("00001124-0000-1000-8000-00805f9b34fb")
+
+        // Notification
+        private const val CHANNEL_ID = "bluetooth_hid_channel"
+        private const val NOTIFICATION_ID = 1001
+
+        // Retry settings
+        private const val MAX_GET_PROFILE_RETRIES = 9
+        private const val GET_PROFILE_RETRY_DELAY_MS = 500L
     }
     
     private var bluetoothAdapter: BluetoothAdapter? = null
@@ -53,27 +69,40 @@ class BluetoothHidService(private val context: Context) {
     interface LogListener {
         fun onLog(message: String)
     }
-    
+
     enum class ConnectionState {
         DISCONNECTED,
         ADVERTISING,
         CONNECTING,
         CONNECTED
     }
-    
+
+    private var foregroundService: BluetoothHidForegroundService? = null
+
     init {
         initialize()
+        startForegroundService()
     }
-    
+
+    private fun startForegroundService() {
+        foregroundService = BluetoothHidForegroundService(context)
+        foregroundService?.start()
+    }
+
+    private fun stopForegroundService() {
+        foregroundService?.stop()
+        foregroundService = null
+    }
+
     private fun initialize() {
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = bluetoothManager?.adapter
-        
+
         if (bluetoothAdapter == null) {
             log("ERROR: Bluetooth not supported")
             return
         }
-        
+
         // Create HID device SDP settings
         hidDeviceApp = BluetoothHidDeviceAppSdpSettings(
             DEVICE_NAME,
@@ -82,13 +111,13 @@ class BluetoothHidService(private val context: Context) {
             BluetoothHidDevice.SUBCLASS1_COMBO,
             HidConstants.KEYBOARD_HID_DESCRIPTOR
         )
-        
-        // Register HID device profile
-        registerHidDevice()
+
+        // Register HID device profile with retry mechanism
+        registerHidDeviceWithRetry()
     }
     
-    private fun registerHidDevice() {
-        log("========== REGISTER HID DEVICE ==========")
+    private fun registerHidDeviceWithRetry(retryCount: Int = 0) {
+        log("========== REGISTER HID DEVICE (Attempt ${retryCount + 1}/${MAX_GET_PROFILE_RETRIES}) ==========")
         val adapter = bluetoothAdapter ?: run {
             log("ERROR: Bluetooth adapter is null")
             return
@@ -101,7 +130,7 @@ class BluetoothHidService(private val context: Context) {
 
         log("Getting HID Device profile proxy...")
         // Get HID device proxy
-        adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+        adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                 log("onServiceConnected: profile=$profile, proxy=$proxy")
                 if (profile == BluetoothProfile.HID_DEVICE) {
@@ -121,6 +150,24 @@ class BluetoothHidService(private val context: Context) {
                 }
             }
         }, BluetoothProfile.HID_DEVICE)
+
+        // Retry if not connected after delay
+        if (retryCount < MAX_GET_PROFILE_RETRIES) {
+            handler.postDelayed({
+                if (hidDevice == null) {
+                    log("HID Device not connected, retrying... (${retryCount + 1}/${MAX_GET_PROFILE_RETRIES})")
+                    registerHidDeviceWithRetry(retryCount + 1)
+                }
+            }, GET_PROFILE_RETRY_DELAY_MS)
+        } else {
+            log("ERROR: startHIDProxy: cannot start localAsHidDevice after $MAX_GET_PROFILE_RETRIES attempts")
+            connectionListener?.onError("Failed to initialize HID Device after multiple attempts")
+        }
+    }
+
+    private fun registerHidDevice() {
+        // This method is deprecated, use registerHidDeviceWithRetry instead
+        registerHidDeviceWithRetry()
     }
     
     private fun stateName(state: Int): String {
@@ -427,5 +474,85 @@ class BluetoothHidService(private val context: Context) {
         disconnect()
         hidDevice?.unregisterApp()
         bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice)
+        stopForegroundService()
+    }
+}
+
+/**
+ * Foreground service to keep the Bluetooth HID service running
+ */
+class BluetoothHidForegroundService(private val context: Context) : Service() {
+
+    companion object {
+        private const val CHANNEL_ID = "bluetooth_hid_channel"
+        private const val NOTIFICATION_ID = 1001
+    }
+
+    private var isRunning = false
+
+    fun start() {
+        if (!isRunning) {
+            val intent = Intent(context, BluetoothHidForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            isRunning = true
+        }
+    }
+
+    fun stop() {
+        if (isRunning) {
+            val intent = Intent(context, BluetoothHidForegroundService::class.java)
+            context.stopService(intent)
+            isRunning = false
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, createNotification())
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "蓝牙键盘服务",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "蓝牙HID设备连接服务"
+                setShowBadge(false)
+            }
+
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun createNotification(): Notification {
+        val mainIntent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, mainIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("蓝牙键盘运行中")
+            .setContentText("等待设备连接...")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
     }
 }
