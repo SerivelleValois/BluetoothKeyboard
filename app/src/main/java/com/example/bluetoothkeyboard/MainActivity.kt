@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         private const val TAG = "MainActivity"
         private const val REQUEST_ENABLE_BT = 1
         private const val REQUEST_BLUETOOTH_PERMISSIONS = 2
+        private const val REQUEST_STORAGE_PERMISSIONS = 3
         private const val PAIRING_TIMEOUT_MS = 30000L // 30 seconds pairing timeout
     }
 
@@ -173,6 +174,18 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE)
                 != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
+            }
+        }
+
+        // Storage permissions for saving logs to Download directory
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }
 
@@ -564,12 +577,12 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
     private fun exportLogs() {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val logDir = getExternalFilesDir(null)?.resolve("logs")
+            val logDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
             if (logDir != null) {
                 if (!logDir.exists()) {
                     logDir.mkdirs()
                 }
-                val logFile = logDir.resolve("bluetooth_keyboard_${timestamp}.log")
+                val logFile = java.io.File(logDir, "bluetooth_keyboard_${timestamp}.log")
                 logFile.writeText(logBuffer.toString())
 
                 // Share the log file
@@ -602,32 +615,30 @@ class MainActivity : AppCompatActivity(), MultiTouchKeyboardView.KeyListener {
         }
     
         private fun saveLogToFile(message: String) {
-            try {
-                val logDir = getExternalFilesDir(null)?.resolve("logs")
-                if (logDir != null) {
-                    if (!logDir.exists()) {
-                        logDir.mkdirs()
+                try {
+                    val logDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    if (logDir != null) {
+                        if (!logDir.exists()) {
+                            logDir.mkdirs()
+                        }
+                        val logFile = java.io.File(logDir, "bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.log")
+                        logFile.appendText(message)
                     }
-                    val logFile = logDir.resolve("bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.log")
-                    logFile.appendText(message)
+                } catch (e: Exception) {
+                    // Silently fail to avoid infinite loop
                 }
-            } catch (e: Exception) {
-                // Silently fail to avoid infinite loop
-            }
-        }
-    
+            }    
         private fun forceSaveAllLogs() {
-            try {
-                val logDir = getExternalFilesDir(null)?.resolve("logs")
-                if (logDir != null) {
-                    if (!logDir.exists()) {
-                        logDir.mkdirs()
+                try {
+                    val logDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    if (logDir != null) {
+                        if (!logDir.exists()) {
+                            logDir.mkdirs()
+                        }
+                        val logFile = java.io.File(logDir, "bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_crash.log")
+                        logFile.writeText(logBuffer.toString())
                     }
-                    val logFile = logDir.resolve("bluetooth_keyboard_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}_crash.log")
-                    logFile.writeText(logBuffer.toString())
+                } catch (e: Exception) {
+                    // Silently fail
                 }
-            } catch (e: Exception) {
-                // Silently fail
-            }
-        }
-    }
+            }    }
